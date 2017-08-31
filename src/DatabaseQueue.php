@@ -158,7 +158,7 @@ class DatabaseQueue extends Queue implements QueueInterface
     
     public function flush()
     {
-        DB::table('queue')->insert($this->jobs);
+        DB::table('queues')->insert($this->jobs);
         $this->jobs = [];
     }
 
