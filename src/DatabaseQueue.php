@@ -60,6 +60,15 @@ class DatabaseQueue extends Queue implements QueueInterface
      * @var int
      */
     protected $lock_type = self::LOCK_TYPE_NONE;
+    
+    /**
+     * Automatically flush the cached jobs to the database if this amount is reached
+     * Default is 1 so there is no cache
+     * @var type 
+     */
+    protected $max_cache = 1;
+
+    protected $jobs = [];
 
     /**
      * Create a new database queue instance.
@@ -74,6 +83,7 @@ class DatabaseQueue extends Queue implements QueueInterface
         , $default = self::QUEUE_DEFAULT
         , $expire = 60
         , $lock_type = self::LOCK_TYPE_NONE
+        , $max_cache = 1
         )
     {
         $this->table = $table;
@@ -81,6 +91,7 @@ class DatabaseQueue extends Queue implements QueueInterface
         $this->default = $default;
         $this->database = $database;
         $this->lock_type = $lock_type;
+        $this->max_cache = $max_cache;
     }
 
     /**
@@ -93,7 +104,7 @@ class DatabaseQueue extends Queue implements QueueInterface
      */
     public function push($job, $data = '', $queue = null)
     {
-        $id = $this->storeJob($job, $data, $queue);
+        $this->storeJob($job, $data, $queue);
 
         return 0;
     }
@@ -117,9 +128,15 @@ class DatabaseQueue extends Queue implements QueueInterface
         $job->status = Job::STATUS_OPEN;
         $job->timestamp = date('Y-m-d H:i:s', ($timestamp != 0 ? $timestamp : time()));
         $job->payload = $payload;
-        $job->save();
 
-        return $job->id;
+        $this->jobs[] = $job->toArray();
+        
+        if ( count($this->jobs) >= $this->max_cache )
+        {
+            $this->flush();
+        }
+
+        return 0;
     }
 
     /**
@@ -134,9 +151,15 @@ class DatabaseQueue extends Queue implements QueueInterface
     public function later($delay, $job, $data = '', $queue = null)
     {
         $timestamp = time() + $this->getSeconds($delay);
-        $id = $this->storeJob($job, $data, $queue, $timestamp);
+        $this->storeJob($job, $data, $queue, $timestamp);
 
         return 0;
+    }
+    
+    public function flush()
+    {
+        DB::table('queue')->insert($this->jobs);
+        $this->jobs = [];
     }
 
     /**
