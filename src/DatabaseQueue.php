@@ -60,15 +60,8 @@ class DatabaseQueue extends Queue implements QueueInterface
      * @var int
      */
     protected $lock_type = self::LOCK_TYPE_NONE;
-    
-    /**
-     * Automatically flush the cached jobs to the database if this amount is reached
-     * Default is 1 so there is no cache
-     * @var type 
-     */
-    protected $max_cache = 1;
 
-    protected $jobs = [];
+    protected $cache = [];
 
     /**
      * Create a new database queue instance.
@@ -83,7 +76,6 @@ class DatabaseQueue extends Queue implements QueueInterface
         , $default = self::QUEUE_DEFAULT
         , $expire = 60
         , $lock_type = self::LOCK_TYPE_NONE
-        , $max_cache = 1
         )
     {
         $this->table = $table;
@@ -91,7 +83,7 @@ class DatabaseQueue extends Queue implements QueueInterface
         $this->default = $default;
         $this->database = $database;
         $this->lock_type = $lock_type;
-        $this->max_cache = $max_cache;
+        $this->createQueueCache($this->default, true);
     }
 
     /**
@@ -129,15 +121,11 @@ class DatabaseQueue extends Queue implements QueueInterface
         $job->timestamp = date('Y-m-d H:i:s', ($timestamp != 0 ? $timestamp : time()));
         $job->payload = $payload;
 
-        $this->jobs[] = $job->toArray();
-        
-        if ( count($this->jobs) >= $this->max_cache )
-        {
-            $this->flush();
-        }
+        $this->addJobToCache($job);
 
         return 0;
     }
+
 
     /**
      * Push a new job onto the queue after a delay.
@@ -155,11 +143,52 @@ class DatabaseQueue extends Queue implements QueueInterface
 
         return 0;
     }
-    
-    public function flush()
+
+    public function flush($queue)
     {
-        DB::table('queues')->insert($this->jobs);
-        $this->jobs = [];
+        if ($this->cache[$queue]['jobs'])
+        {
+            DB::table('queues')->insert($this->cache[$queue]['jobs']);
+            $this->cache[$queue]['jobs'] = [];
+        }
+    }
+
+    public function flushAll()
+    {
+        foreach(array_keys($this->cache) as $queue)
+        {
+            $this->flush($queue);
+        }
+    }
+
+    private function createQueueCache($queue, $force)
+    {
+        if ($force || !isset($this->cache[$queue]))
+        {
+            $this->cache[$queue] = 
+            [
+                'size' => 1,
+                'jobs' => []
+            ];
+        }
+    }
+
+    private function addJobToCache($job)
+    {
+        $this->createQueueCache($job->queue, false);
+
+        $this->cache[$job->queue]['jobs'][] = $job->toArray();
+
+        if ( count($this->cache[$job->queue]['jobs']) >= $this->cache[$job->queue]['size'] )
+        {
+            $this->flush($job->queue);
+        }
+    }
+
+    public function setCacheSize($queue, $cache_size)
+    {
+        $this->createQueueCache($queue, false);
+        $this->cache[$queue]['size'] = $cache_size;
     }
 
     /**
