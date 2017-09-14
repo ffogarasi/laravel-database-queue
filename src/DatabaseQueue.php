@@ -177,7 +177,9 @@ class DatabaseQueue extends Queue implements QueueInterface
     {
         $this->createQueueCache($job->queue, false);
 
-        $this->cache[$job->queue]['jobs'][] = $job->toArray();
+        $job_array = $job->toArray();
+        $job_array['created_at'] = $job_array['updated_at'] = (new Carbon())->format('Y-m-d H:i:s');
+        $this->cache[$job->queue]['jobs'][] = $job_array;
 
         if ( count($this->cache[$job->queue]['jobs']) >= $this->cache[$job->queue]['size'] )
         {
